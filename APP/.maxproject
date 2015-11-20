@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<maxCompilerManager>
+<enginePart internalEngineSubproject="cyk-parser-v2_EngineCode" isSrcBin="false" isUseDefaultSelected="false" outputLocation="/cyk-parser-v2_EngineCode/bin" projectName="cyk-parser-v2"/>
+<cpuPart internalCpuSubproject="cyk-parser-v2_CPUCode"/>
+<watchedFiles/>
+</maxCompilerManager>

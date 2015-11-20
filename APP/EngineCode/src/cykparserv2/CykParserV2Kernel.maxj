@@ -1,0 +1,204 @@
+package cykparserv2;
+
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.util.ArrayList;
+import java.util.List;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.CounterChain;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+import com.maxeler.maxcompiler.v2.utils.Bits;
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
+
+//kernel, param ba_size: // velicina bit array u uint32
+//- ulazni skalar: num_ba, tip: uint32
+//- ulazni skalar: g_size, tip: unit32 // broj smena u gramatici
+
+class CykParserV2Kernel extends Kernel {
+
+	private static final DFEType type = dfeUInt(32);
+	private static final DFEType type64 = dfeUInt(64);
+
+	private BufferedReader br;
+
+	protected CykParserV2Kernel(KernelParameters parameters, int ba_size, int g_max, int G_PARALLEL, int g_lut, int seq_max) {
+		super(parameters);
+
+		DFEVectorType<DFEVar> dummyType =
+			new DFEVectorType<DFEVar>(type, ba_size);
+
+		DFEVectorType<DFEVar> type_glut = new DFEVectorType<DFEVar>(dfeUInt(1),g_lut);
+
+		DFEVar seq_len = io.scalarInput("seq_len", type64);
+		//DFEVar N = io.scalarInput("N", type);
+
+		DFEVar init = control.count.pulse(seq_max);
+
+		DFEVar inp_cnt = control.count.simpleCounter(8);
+
+		DFEVector<DFEVar> input_seq = io.input("input_seq",dummyType, init);
+		CounterChain chain = control.count.makeCounterChain(~init);
+		DFEVar ii = chain.addCounter(seq_len-1,1);
+		DFEVar kk = chain.addCounter(stream.offset(ii+1, -1),1);
+		DFEVar k = kk+1;
+		DFEVar j = chain.addCounter(stream.offset(seq_len-ii, -1),1);
+		DFEVar i = ii+1;
+		//DFEVar gg = (g_max > 1) ? chain.addCounter(g_max,1) : constant.var(dfeUInt(1),0);
+		//DFEVar delay = chain.addCounter(16, 1);
+        DFEVar gg = chain.addCounter(g_max+24,1);
+
+		int padr_bits = MathUtils.bitsToAddress(seq_max * seq_max);
+		DFEType padrt = dfeUInt(padr_bits);
+
+		List<Memory<DFEVar>> p = new ArrayList<Memory<DFEVar>>(ba_size);
+		for (int b=0; b< ba_size-1; b++) {
+			Memory<DFEVar> pm = mem.alloc(type, seq_max * seq_max);
+			p.add(pm);
+			//pm.mapToCPU("pmem"+(b+100));
+		}
+
+		int g_mems = G_PARALLEL * g_lut;
+		List<Memory<DFEVar>> g = new ArrayList<Memory<DFEVar>>(g_mems);
+		List<Memory<DFEVar>> gt = new ArrayList<Memory<DFEVar>>(G_PARALLEL * (ba_size-1));
+		try {
+			br = new BufferedReader(new FileReader(System.getProperty("user.dir")+"/src/cykparserv2/gmem.txt"));
+
+			for (int gi=0; gi< g_mems; gi++) {
+				Memory<DFEVar> gm = mem.alloc(type, g_max);
+				setGmContents(gm, g_max);
+				g.add(gm);
+			}
+
+			//String s = br.readLine();
+			//System.out.println("@@@"+s);
+			if ( ! br.readLine().equals("Proba") ) {
+				System.out.println("Error: GMEM file corrupted\n");
+				System.exit(1);
+			}
+		    int g_max_bits = -1;
+		    while ( 1<<(++g_max_bits) < g_max )
+		    	;
+			for (int gi=0; gi< G_PARALLEL; gi++) {
+				for (int b=0; b< ba_size-1; b++) {
+					Memory<DFEVar> gtmem = mem.alloc(type, (1<<g_max_bits)*(1<<g_lut));
+					//gm.mapToCPU("gmem" +(b+100)+(gi+10000));
+					//				gm.setContents(new Bits[]{new Bits(32,0), new Bits(32,0), new Bits(32,0),
+					//					new Bits(32,0),new Bits(32,0), new Bits(32,0),new Bits(32,0),
+					//					new Bits(32,0),new Bits(32,0), new Bits(32,0),new Bits(32,0),
+					//					new Bits(32,0),new Bits(32,0), new Bits(32,0),new Bits(32,0),
+					//					new Bits(32,0),new Bits(32,0), new Bits(32,0),new Bits(32,0),
+					//					new Bits(32,0),new Bits(32,0), new Bits(32,0),new Bits(32,0),
+					//					new Bits(32,0),new Bits(32,0), new Bits(32,0),new Bits(32,0)});
+					setGtContents(gtmem, (1<<g_lut)*(1<<g_max_bits));
+					gt.add(gtmem);
+				}
+			}
+
+			br.close();
+		} catch (java.io.IOException e) {
+	          System.out.println("Error reading memory contents:"+e.getMessage());
+	          System.exit(1);
+	    }
+
+		Bits[] masks = new Bits[32];
+		for (int b=0; b < 32; b++)
+			masks[b] = new Bits(32,1<<b);
+
+		Memory<DFEVar> mask = mem.alloc(type, 32);
+	    mask.setContents(masks);
+
+	    DFEVector<DFEVar> dummy = io.output("dummy", dummyType,
+	    		(i === (seq_len -1)) & (k === i ) & (j === 0) & chain.getCounterWrap(gg) );
+
+		int ba_bits = MathUtils.bitsToAddress(ba_size-1);
+		int gmax_bits = MathUtils.bitsToAddress(g_max);
+    	List<DFEVar> p_rhs1 = new ArrayList<DFEVar>(ba_size);
+    	List<DFEVar> p_rhs2 = new ArrayList<DFEVar>(ba_size);
+    	List<DFEVar> has_lhs = new ArrayList<DFEVar>(G_PARALLEL);
+    	for (int b=0; b< ba_size-1; b++) {
+    		DFEVar p_rhs1_tmp = p[b].read(((k-1)* seq_max + j).cast(padrt));
+    		//p_rhs1_tmp = optimization.limitFanout(p_rhs1_tmp, 32);
+    		p_rhs1.add( p_rhs1_tmp );
+    		DFEVar p_rhs2_tmp = p[b].read(((i - k)* seq_max + j + k).cast(padrt));
+    		//p_rhs2_tmp = optimization.limitFanout(p_rhs2_tmp, 32);
+    		p_rhs2.add( p_rhs2_tmp );
+    	}
+    	for (int gi=0; gi < G_PARALLEL; gi++) {
+    		DFEVector<DFEVar> has_lhs_gi = type_glut.newInstance(this);
+    		for (int gj=0; gj < g_lut; gj++) {
+    			DFEVar g_last = g[gi * g_lut + gj].read(gg.slice(0,gmax_bits));
+    			DFEVar rhs1w = control.mux(g_last.slice(5,ba_bits), p_rhs1);
+    			DFEVar rhs2w = control.mux(g_last.slice(21,ba_bits), p_rhs2);
+    			DFEVar has_rhs1 = ( rhs1w & mask.read(g_last.slice(0,5)) );
+    			DFEVar has_rhs2 = ( rhs2w & mask.read(g_last.slice(16,5)) );
+    			//		DFEVar has_rhs1 = Bitops.circularRightShift(rhs1w, g_last.slice(0,5).cast(dfeUInt(5)));
+    			//		DFEVar has_rhs2 = Bitops.circularRightShift(rhs2w, g_last.slice(16,5).cast(dfeUInt(5)));
+    			has_lhs_gi[gj] <== optimization.pipeline((has_rhs1 !== 0 ) & (has_rhs2 !== 0 )) ;
+    		}
+			DFEVar has_lhs_tmp = has_lhs_gi.pack();
+			//has_lhs_tmp = optimization.limitFanout(has_lhs_tmp, 32);
+    		has_lhs.add( has_lhs_tmp );
+    	}
+
+	    for (int b=0; b< ba_size-1; b++) {
+
+	    	DFEVar oldp = ((k===1)|(kk===0))? constant.var(type,0): p[b].read((i * seq_max + j).cast(padrt));
+
+			for (int gi=0; gi < G_PARALLEL; gi++) {
+				//DFEVar gt_gi = stream.offset(gt[gi*(ba_size-1)+b].read(gg.slice(0,gmax_bits).cat(has_lhs[gi])),-14);
+				DFEVar gt_gi = gt[gi*(ba_size-1)+b].read(gg.slice(0,gmax_bits).cat(has_lhs[gi]));
+				DFEVar gt_tmp0 = type.newInstance(this);
+			    DFEVar gt_tmp1 = type.newInstance(this);
+			    //       gt_tmp0 <== ((gg-14).slice(0) === 0) ? constant.var(type,0) : (stream.offset(gt_tmp0,-2) | gt_gi);
+			    //       gt_tmp1 <== ((gg-14).slice(0) === 1) ? constant.var(type,0) : (stream.offset(gt_tmp1,-2) | gt_gi);
+			           gt_tmp0 <== (gg.slice(0) === 0) ? constant.var(type,0) : (stream.offset(gt_tmp0,-2) | gt_gi);
+			           gt_tmp1 <== (gg.slice(0) === 1) ? constant.var(type,0) : (stream.offset(gt_tmp1,-2) | gt_gi);
+			    DFEVar gt_tmp = stream.offset(gt_tmp0,-1) | gt_tmp1; // if even g_max exchange gt_tmp1 and gt_tmp0
+				////gt_tmp = optimization.pipeline(gt_tmp);
+			    ////DFEVar gt_sh = Reductions.streamHold(stream.offset(gt_tmp,-14), gg === (14+g_max-1));
+				////debug.printf("gg=%d b=%d gi=%d gti=%d gt0=%d gt1=%d gtt=%d sh=%d\n",gg, b, gi, gt_gi, gt_tmp0, gt_tmp1, gt_tmp, gt_sh);
+			    ////debug.printf("gg=%d gi=%d gti=%d gth=%d\n", gg, gi, gt_gi, gt_sh);
+			    //oldp |= gt_tmp;
+			    oldp |= stream.offset(gt_tmp,-14);
+			}
+			DFEVar ooldp = stream.offset(oldp,-10); // 6
+			//debug.printf("gg=%d oldp=%d ooldp=%d\n", gg, oldp, ooldp);
+            dummy[b] <== ooldp;
+			p[b].write( (init) ? (inp_cnt).cast(padrt) : (i * seq_max + j).cast(padrt), (init)? input_seq[b] : ooldp ,init | chain.getCounterWrap(gg));
+		}
+
+		dummy[ba_size-1] <== input_seq[ba_size-1];
+
+		//debug.printf("%8x %8x dummy %8x %8x %8x %8x %8x %8x %8x %8x \n", i, j, dummy[0], dummy[1],dummy[2],dummy[3],dummy[4],dummy[5],dummy[6],dummy[7]);
+	}
+
+	protected void setGmContents(Memory<DFEVar> gm, int gm_size) throws java.io.IOException {
+
+		String g_str = null;
+		g_str = br.readLine();
+		//g_str = new String(new char[gm_size*8]).replace("\0", "0");
+		Bits[] gm_bits = new Bits[gm_size];
+		for (int gi=0; gi < gm_size; gi++) {
+			gm_bits[gi] = new Bits(32,g_str.substring(gi*8,gi*8+8));
+		}
+		gm.setContents(gm_bits);
+	}
+
+	protected void setGtContents(Memory<DFEVar> gtmem, int gt_size) throws java.io.IOException {
+
+		String g_str = null;
+		g_str = br.readLine();
+		//g_str = new String(new char[gt_size*8]).replace("\0", "0");
+		Bits[] gt_bits = new Bits[gt_size];
+		for (int gi=0; gi < gt_size; gi++) {
+			gt_bits[gi] = new Bits(32,g_str.substring(gi*8,gi*8+8));
+		}
+		gtmem.setContents(gt_bits);
+	}
+}

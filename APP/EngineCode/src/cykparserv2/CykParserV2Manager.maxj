@@ -1,0 +1,91 @@
+package cykparserv2;
+
+import com.maxeler.maxcompiler.v2.managers.BuildConfig;
+import com.maxeler.maxcompiler.v2.managers.BuildConfig.Effort;
+import com.maxeler.maxcompiler.v2.managers.custom.CustomManager;
+import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
+import com.maxeler.maxcompiler.v2.managers.engine_interfaces.CPUTypes;
+import com.maxeler.maxcompiler.v2.managers.engine_interfaces.EngineInterface;
+import com.maxeler.maxcompiler.v2.managers.engine_interfaces.InterfaceParam;
+
+public class CykParserV2Manager extends CustomManager {
+
+	private static final String s_kernelName = "CykParserV2Kernel";
+    private static final int ba_size = 40;
+    private static final int g_max = 63;
+    private static final int G_PARALLEL = 4;
+    private static final int g_lut = 6;
+    private static final int seq_max = 16;
+
+	public CykParserV2Manager(CykParserV2EngineParameters engineParameters) {
+		super(engineParameters);
+
+		KernelBlock block = addKernel(new CykParserV2Kernel(makeKernelParameters(s_kernelName),ba_size,g_max,G_PARALLEL,g_lut,seq_max));
+
+
+		//block.getInput("seq_len") <== addStreamFromCPU("seq_len");
+		addStreamToCPU("dummy") <== block.getOutput("dummy");
+		block.getInput("input_seq") <== addStreamFromCPU("input_seq");
+		//for (String inputName: block.getAllInputs())
+		//	block.getInput(inputName).connect(addStreamFromCPU(inputName));
+//		for (String outputName: block.getAllOutputs())
+//			addStreamToCPU(outputName).connect(block.getOutput(outputName));
+
+		createSLiCinterface(modeDefault());
+		//createSLiCinterface(modeWrite("writeLMem"));
+
+		configBuild(engineParameters);
+
+	}
+
+//	private static EngineInterface modeWrite(String name) {
+//		EngineInterface engine_interface = new EngineInterface(name);
+//
+//		InterfaceParam nbytes = engine_interface.addParam("nbytes", CPUTypes.INT);
+//		InterfaceParam start = engine_interface.addParam("address", CPUTypes.INT);
+//
+//		engine_interface.setStream("cpu_to_lmem", CPUTypes.INT32, nbytes);
+//		engine_interface.setLMemLinear("cpu2lmem", start * CPUTypes.INT32.sizeInBytes(), nbytes);
+//		engine_interface.ignoreAll(Direction.IN_OUT);
+//		return engine_interface;
+//	}
+
+	private static EngineInterface modeDefault() {
+		EngineInterface engine_interface = new EngineInterface();
+		//CPUTypes   type = CPUTypes.INT32;
+		//int        size = type.sizeInBytes();
+
+		InterfaceParam  seq_len    = engine_interface.addParam("seq_len", CPUTypes.INT);
+		//InterfaceParam  dummy    = engine_interface.addParam("dummy", CPUTypes.INT);
+		InterfaceParam  N    = engine_interface.addParam("N", CPUTypes.INT);
+
+		engine_interface.setScalar(s_kernelName, "seq_len", seq_len);
+		//engine_interface.setScalar(s_kernelName, "N", N);
+		engine_interface.setStream("input_seq",CPUTypes.UINT32, ba_size * seq_max * CPUTypes.UINT32.sizeInBytes());
+		engine_interface.setStream("dummy",CPUTypes.UINT32, ba_size * CPUTypes.UINT32.sizeInBytes());
+		engine_interface.setTicks(s_kernelName, N);
+//		for (int b=0; b<ba_size-1; b++) {
+//			engine_interface.ignoreMem(s_kernelName, "pmem"+(b+100), Direction.OUT);
+//		    engine_interface.ignoreMem(s_kernelName, "replicated_mem_0_pmem"+(b+100), Direction.OUT);
+//		    engine_interface.ignoreMem(s_kernelName, "replicated_mem_1_pmem"+(b+100), Direction.OUT);
+//		    engine_interface.ignoreMem(s_kernelName, "replicated_mem_2_pmem"+(b+100), Direction.OUT);
+//		}
+//		engine_interface.ignoreMem(s_kernelName, "pmem"+(ba_size-1+100), Direction.OUT);
+		return engine_interface;
+	}
+
+	private void configBuild(CykParserV2EngineParameters params) {
+		BuildConfig buildConfig = getBuildConfig();
+		buildConfig.setMPPRCostTableSearchRange(params.getMPPRStartCT(), params.getMPPREndCT());
+		//buildConfig.setMPPRCostTableSearchRange(1,10);
+		buildConfig.setMPPRParallelism(params.getMPPRThreads());
+		buildConfig.setBuildEffort(Effort.VERY_HIGH);
+		buildConfig.setMPPRRetryNearMissesThreshold(params.getMPPRRetryThreshold());
+	}
+
+
+	public static void main(String[] args) {
+		CykParserV2Manager manager = new CykParserV2Manager(new CykParserV2EngineParameters(args));
+		manager.build();
+	}
+}
