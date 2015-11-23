@@ -1,6 +1,6 @@
 #
 # This file is managed by MaxIDE. Do NOT change.
-# RunRule     : DFE
+# RunRule     : Maia
 #
 ifndef RUNRULE
         $(error RUNRULE environment variable is not set.')
@@ -57,7 +57,7 @@ MAXDIR := $(THIS_PATH)maxfiles
 INCDIR := $(THIS_PATH)include
 
 MAXIDEDIR?=$(MAXCOMPILERDIR_QUOTE)/lib/MaxIDE
-PORT_NAME_SIM?=
+PORT_NAME_SIM?=cykparservMaia
 DEVICE_NAME_SIM:=$(PORT_NAME_SIM)0:$(PORT_NAME_SIM)
 DEVICE_NAME_HW:=/dev/maxeler0
 MAXELEROSDIR_SIM:=$(MAXCOMPILERDIR_QUOTE)/lib/maxeleros-sim
@@ -72,7 +72,7 @@ all:
 # auto-regenerate this include file, if RunRule is more recent.
 #
 $(THIS_FILE): $(THIS_PATH)RunRules.settings
-	java -jar $(MAXIDEDIR)/projectAdmin.jar -u $(THIS_PATH)../../ DFE
+	java -jar $(MAXIDEDIR)/projectAdmin.jar -u $(THIS_PATH)../../ Maia
 	
 #
 # MaxFile: CykParserV2
@@ -89,7 +89,7 @@ $(OBJDIR)/slic_CykParserV2.o: $(MAXDIR)/CykParserV2.max
 	$(SLICCOMPILE) "$<" "$@"
 
 $(MAXDIR)/CykParserV2.max: 
-	( cd "$(THIS_PATH)/" && if [ -z "$${MAXCOMPILER_BUILD_DIR+xxx}" ]; then export MAXCOMPILER_BUILD_DIR="$(realpath $(MAXDIR))"; fi ;  export MAX_BUILDPARAMS="DFEModel='VECTIS' target='DFE' maxFileName='CykParserV2' MPPRStartCT='1' MPPREndCT='8' MPPRThreads='4' " ; set -o pipefail ; ant -v -f "CykParserV2.xml" run 2>&1 | tee CykParserV2_cmd.log ; exit ${PIPESTATUS[0]} )
+	( cd "$(THIS_PATH)/" && if [ -z "$${MAXCOMPILER_BUILD_DIR+xxx}" ]; then export MAXCOMPILER_BUILD_DIR="$(realpath $(MAXDIR))"; fi ;  export MAX_BUILDPARAMS="DFEModel='MAIA' target='DFE' maxFileName='CykParserV2' MPPRStartCT='1' MPPREndCT='8' MPPRThreads='4' " ; set -o pipefail ; ant -v -f "CykParserV2.xml" run 2>&1 | tee CykParserV2_cmd.log ; exit ${PIPESTATUS[0]} )
 	cp "`grep -o -e "^.*MaxFile: .*\.max" $(THIS_PATH)/CykParserV2_cmd.log | cut -d ':'  -f 4 | sed 's/^ //g'`" "$(MAXDIR)/CykParserV2.max"
 	cp "`grep -o -e "^.*MaxFile: .*\.max" $(THIS_PATH)/CykParserV2_cmd.log | cut -d ':'  -f 4 | sed 's/^ //g' | sed 's/\.max/.h/g'`" "$(MAXDIR)/CykParserV2.h"
 	cp -f "$(MAXDIR)/"*.h "$(INCDIR)/"
