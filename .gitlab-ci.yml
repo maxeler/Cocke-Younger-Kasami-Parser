@@ -1,0 +1,30 @@
+#
+# Cocke-Younger-Kasami-Parser
+#
+# Required variables:
+#  - MAXCOMPILER_SIM_IMAGE: image with MaxCompiler and MaxCompiler Simulator
+#  - MAXCOMPILER_SIM_TAG:   tag of simulation compiling and running capable runner
+#  - MAXCOMPILER_DFE_IMAGE: image with MaxCompiler and Quartus II
+#  - MAXCOMPILER_DFE_TAG:   tag of DFE compiling capable runner
+#
+
+stages:
+- make-sim
+- make-dfe
+
+make-sim-Cocke-Younger-Kasami-Parser:
+  image: $MAXCOMPILER_SIM_IMAGE
+  script:
+  - make -C APP/CPUCode RUNRULE='Simulation' distclean build
+  - make -C APP/CPUCode RUNRULE='Simulation' runsim
+  stage: make-sim
+  tags:
+  - $MAXCOMPILER_SIM_TAG
+
+make-dfe-Cocke-Younger-Kasami-Parser:
+  image: $MAXCOMPILER_DFE_IMAGE
+  script:
+  - make -C APP/CPUCode RUNRULE='Maia' distclean build
+  stage: make-dfe
+  tags:
+  - $MAXCOMPILER_DFE_TAG
