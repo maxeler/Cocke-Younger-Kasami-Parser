@@ -19,7 +19,7 @@ make-sim-Cocke-Younger-Kasami-Parser:
   - make -C APP/CPUCode RUNRULE='Simulation' runsim
   stage: make-sim
   tags:
-  - $MAXCOMPILER_SIM_TAG
+  - maxcompiler-sim
 
 make-dfe-Cocke-Younger-Kasami-Parser:
   image: $MAXCOMPILER_DFE_IMAGE
@@ -27,4 +27,4 @@ make-dfe-Cocke-Younger-Kasami-Parser:
   - make -C APP/CPUCode RUNRULE='Maia' distclean build
   stage: make-dfe
   tags:
-  - $MAXCOMPILER_DFE_TAG
+  - maxcompiler-dfe
